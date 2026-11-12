@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ArrowDown, ArrowUp, Ban, Check, ChevronLeft, Hash, Languages, LogOut, MessageCircle, Moon, Plus, Send, Sun, Trash2, X } from 'lucide-react'
+import { Ban, ChevronLeft, Hash, Languages, LogOut, MessageCircle, Moon, Plus, Send, Sun, Trash2, X } from 'lucide-react'
 import { apiClient, isApiError } from './services/apiClient'
 import { useRealtime } from './services/realtime'
 import type { AuthTokenResponse, Comment, DirectConversation, DirectMessage, PublicMessage, User, UserSummary } from './types/api'
@@ -188,6 +188,7 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
       const items = r.data ?? []
       setDirectMessages((current) => older ? [...current, ...items] : items)
       setLoadedDirectId(id)
+      setDirectPage(page)
       setDirectLast(r.last_page ?? 1)
     } catch (e) {
       handleError(e)
@@ -206,8 +207,13 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
     }
   }, [auth, handleError])
 
+  // Data loading is intentionally initiated by these effects when authentication or filters change.
+  // oxlint's set-state-in-effect rule cannot see that the state updates happen asynchronously.
+  // oxlint-disable-next-line react(set-state-in-effect)
   useEffect(() => { if (!auth) return; void loadConversations(); void loadBlocked() }, [auth, loadConversations, loadBlocked])
+  // oxlint-disable-next-line react(set-state-in-effect)
   useEffect(() => { if (!auth) return; void loadPublic() }, [auth, loadPublic])
+  // oxlint-disable-next-line react(set-state-in-effect)
   useEffect(() => { if (selectedId && auth) void loadDirect(selectedId, 1) }, [selectedId, auth, loadDirect])
   useEffect(() => {
     if (!auth) return
@@ -269,13 +275,18 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
   async function createConversation(e: FormEvent) {
     e.preventDefault()
     if (!auth || !newPersonId) return
+    await startConversation(Number(newPersonId))
+    setNewPersonId('')
+  }
+
+  async function startConversation(userId: number) {
+    if (!auth || userId === me?.id || busy) return
     setBusy(true)
     try {
-      const r = await apiClient.createDirectConversation({ user_id: Number(newPersonId) }, auth)
+      const r = await apiClient.createDirectConversation({ user_id: userId }, auth)
       setSelectedId(r.data.id)
       setSection('direct')
-      setNewPersonId('')
-      await loadConversations(true)
+      setConversations(list => [r.data, ...list.filter(item => item.id !== r.data.id)])
     } catch (err) {
       handleError(err)
     } finally {
@@ -452,7 +463,7 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
         </button>
 
         <div className="top-actions">
-          <span className="account-name">{me.name || me.email}</span>
+          <span className="account-name">{me.name || me.email}<small>{me.email}</small></span>
           <button title={t('اللغة', 'Language')} onClick={() => setEnglish(!english)}><Languages size={18} /></button>
           <button title={t('المظهر', 'Theme')} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
@@ -485,7 +496,7 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
                     <span className="avatar-dot">{avatarName(user).slice(0, 1)}</span>
                     <span>{avatarName(user)}</span>
                   </div>
-                  <button className="text-button" onClick={() => { setSelectedId(user.id); setSection('direct') }}>
+                  <button className="text-button" onClick={() => void startConversation(user.id)}>
                     {t('محادثة', 'Chat')}
                   </button>
                 </li>
@@ -526,16 +537,16 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
                 <input
                   className="search-box"
                   value={publicSearch}
-                  onChange={e => setPublicSearch(e.target.value)}
+                  onChange={e => { setPublicSearch(e.target.value); setPublicPage(1) }}
                   placeholder={t('ابحث في المنشورات…', 'Search posts…')}
                 />
-                <select value={sort} onChange={e => setSort(e.target.value as typeof sort)}>
+                <select value={sort} onChange={e => { setSort(e.target.value as typeof sort); setPublicPage(1) }}>
                   <option value="newest">{t('الأحدث', 'Newest')}</option>
                   <option value="oldest">{t('الأقدم', 'Oldest')}</option>
                   <option value="name_asc">{t('الاسم أ-ي', 'Name A-Z')}</option>
                   <option value="name_desc">{t('الاسم ي-أ', 'Name Z-A')}</option>
                 </select>
-                <select value={range} onChange={e => setRange(e.target.value as typeof range)}>
+                <select value={range} onChange={e => { setRange(e.target.value as typeof range); setPublicPage(1) }}>
                   <option value="all">{t('الكل', 'All')}</option>
                   <option value="today">{t('اليوم', 'Today')}</option>
                   <option value="week">{t('الأسبوع', 'Week')}</option>
@@ -559,6 +570,7 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
                         <small>{time(message.created_at)}</small>
                       </div>
                       <div className="card-actions">
+                        {message.user_id !== me.id && <button onClick={() => void blockUser(message.user)}>{t('حظر', 'Block')}</button>}
                         <button onClick={() => openComments(message.id)}><MessageCircle size={15} /> {message.comments_count ?? 0}</button>
                         <button onClick={() => setEmojiFor(message.id)}><span>😊</span> {t('إيموجي', 'Emoji')}</button>
                       </div>
@@ -579,8 +591,10 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
                     <div className="action-row">
                       <button onClick={() => addEmoji(message.id, '👍')}><span>👍</span> {t('إعجاب', 'Like')}</button>
                       <button onClick={() => openComments(message.id)}><span>💬</span> {t('تعليق', 'Comment')}</button>
-                      <button onClick={() => { setEditing(message.id); setEditDraft(message.content) }}><span>✏️</span> {t('تعديل', 'Edit')}</button>
-                      <button onClick={() => deletePublic(message)}><span>🗑️</span> {t('حذف', 'Delete')}</button>
+                      {message.user_id === me.id && <>
+                        <button onClick={() => { setEditing(message.id); setEditDraft(message.content) }}><span>✏️</span> {t('تعديل', 'Edit')}</button>
+                        <button onClick={() => deletePublic(message)}><span>🗑️</span> {t('حذف', 'Delete')}</button>
+                      </>}
                     </div>
 
                     {emojiFor === message.id && (
@@ -626,6 +640,15 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
                   </article>
                 ))}
               </div>
+              <div className="inline-actions" aria-label={t('صفحات المشاركات', 'Post pages')}>
+                <button className="ghost-btn" disabled={publicPage <= 1 || loading} onClick={() => setPublicPage(page => page - 1)}>
+                  {t('الأحدث', 'Newer')}
+                </button>
+                <span>{publicPage} / {publicLast}</span>
+                <button className="ghost-btn" disabled={publicPage >= publicLast || loading} onClick={() => setPublicPage(page => page + 1)}>
+                  {t('الأقدم', 'Older')}
+                </button>
+              </div>
             </>
           )}
 
@@ -666,8 +689,15 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
                     <>
                       <div className="chat-header">
                         <div className="user-pill"><span className="avatar-dot">{avatarName(selected.other_user).slice(0, 1)}</span>{avatarName(selected.other_user)}</div>
+                        <button className="ghost-btn" onClick={() => void blockUser(selected.other_user)}>{t('حظر', 'Block')}</button>
                         {remoteTyping && remoteTypingConversation === selected.id && <span className="typing-pill">{remoteTyping}</span>}
                       </div>
+
+                      {directPage < directLast && (
+                        <button className="ghost-btn" disabled={loading} onClick={() => void loadDirect(selected.id, directPage + 1, false, true)}>
+                          {t('تحميل رسائل أقدم', 'Load older messages')}
+                        </button>
+                      )}
 
                       <div className="chat-log">
                         {visibleDirectMessages.length === 0 ? (
