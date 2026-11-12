@@ -419,7 +419,7 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
     }
   }
 
-  useRealtime(me ? auth?.token ?? null : null, selectedId, signal => {
+  useRealtime(me ? auth?.token ?? null : null, me?.id ?? null, selectedId, signal => {
     if (signal.type === 'public-message') {
       if (section === 'public') void loadPublic(true)
       void loadConversations(true)
