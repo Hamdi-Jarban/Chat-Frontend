@@ -18,6 +18,24 @@ export interface DataResponse<T> {
   data: T;
 }
 
+/** Laravel resource responses keep items in `data` and add these fields when paginated. */
+export interface LaravelPagination<T> extends DataResponse<T[]> {
+  current_page: number;
+  from?: number | null;
+  last_page: number;
+  last_page_url?: string | null;
+  links?: Array<{ url: string | null; label: string; active: boolean }>;
+  next_page_url?: string | null;
+  path?: string;
+  per_page: number;
+  prev_page_url?: string | null;
+  to?: number | null;
+  total: number;
+}
+
+/** Supports both the legacy `{data: [...]}` response and Laravel's paginator envelope. */
+export type ListResponse<T> = DataResponse<T[]> & Partial<Omit<LaravelPagination<T>, 'data'>>;
+
 export interface MessageResponse {
   message: string;
 }
@@ -63,21 +81,6 @@ export interface Comment {
   user: UserSummary;
   created_at: string;
   updated_at: string;
-}
-
-export interface LaravelPagination<T> {
-  data: T[];
-  current_page: number;
-  from?: number | null;
-  last_page: number;
-  last_page_url?: string | null;
-  links?: Array<{ url: string | null; label: string; active: boolean }>;
-  next_page_url?: string | null;
-  path?: string;
-  per_page: number;
-  prev_page_url?: string | null;
-  to?: number | null;
-  total: number;
 }
 
 export type MessageSort = 'newest' | 'oldest' | 'name_asc' | 'name_desc';
@@ -153,8 +156,10 @@ export interface DirectMessageEvent extends MessageIdEvent {
 }
 
 export const REVERB_CHANNELS = {
-  /** Laravel channel name; the Reverb private-channel protocol adds its private prefix. */
+  /** Laravel channel name; Echo adds the private-channel wire prefix. */
   chat: 'chat',
+  /** Per-recipient channel used to enforce block visibility for typing signals. */
+  chatUser: (recipientId: number) => `chat.user.${recipientId}`,
   directChat: (conversationId: number) => `direct-chat.${conversationId}`,
 } as const;
 

@@ -1,10 +1,15 @@
 # TODO
 
-- [x] بناء شاشة دخول Google وSanctum Token.
-- [x] بناء تخطيط RTL بثلاث مناطق responsive.
-- [x] ربط `/auth/me` و`/auth/logout`.
-- [x] ربط المحادثات الفردية والرسائل الخاصة.
-- [x] ربط الساحة العامة والرسائل العامة.
-- [x] إضافة Emoji ومؤشر الكتابة.
-- [x] إضافة حالات loading/error/empty وfallback polling.
-- [ ] تفعيل عميل WebSocket/Reverb فعليًا بعد تثبيت إعدادات عميل الواجهة والخادم.
+- [x] Build Google OAuth and Sanctum token sign-in.
+- [x] Build responsive RTL layout with public, direct, and blocked sections.
+- [x] Connect account, conversation, public-message, comments, blocking, and typing API operations.
+- [x] Add loading/error/empty states and polling fallback.
+- [x] Support paginated conversation and comment API response envelopes and page parameters in the client.
+- [x] Subscribe to per-recipient public typing channels to match block-aware backend delivery.
+- [ ] Keep the Sanctum token in memory only; remove the `localStorage` read/write in `App.tsx` and update refresh behavior.
+- [ ] Add UI pagination controls for conversations and comments, including loading older comment pages.
+- [ ] Add request cancellation/debouncing and stale-response guards for search, comments, and polling.
+- [ ] Refresh public feed and reconcile conversations immediately after block/unblock actions.
+- [ ] Display the public typing signal in the intended public-chat context.
+- [ ] Replace manual user-ID conversation creation with a user search/selection flow when the API supports it.
+- [ ] Add browser end-to-end coverage and verify the backend/Reverb integration in a deployment-like environment.
