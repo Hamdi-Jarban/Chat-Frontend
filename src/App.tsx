@@ -10,6 +10,7 @@ type Section = 'public' | 'direct' | 'blocked'
 type Theme = 'light' | 'dark'
 
 const readPref = <T extends string>(key: string, fallback: T): T => (localStorage.getItem(key) as T | null) ?? fallback
+const ACCESS_TOKEN_KEY = 'sawalf_access_token'
 const avatarName = (u?: UserSummary | null) => u?.name?.trim() || 'مستخدم'
 const time = (date: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date))
 
@@ -43,7 +44,7 @@ type AppProps = {
 }
 
 function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
-  const [token, setToken] = useState('')
+  const [token, setToken] = useState(() => localStorage.getItem(ACCESS_TOKEN_KEY) ?? '')
   const [me, setMe] = useState<User | null>(null)
   const [tokenInput, setTokenInput] = useState('')
   const [authError, setAuthError] = useState(() => oauthCallback ? oauthFailureMessage(oauthCallback.error) : '')
@@ -86,6 +87,25 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
 
   useEffect(() => { localStorage.setItem('chat-theme', theme) }, [theme])
   useEffect(() => { localStorage.setItem('chat-language', english ? 'en' : 'ar') }, [english])
+  useEffect(() => {
+    if (token) localStorage.setItem(ACCESS_TOKEN_KEY, token)
+    else localStorage.removeItem(ACCESS_TOKEN_KEY)
+  }, [token])
+
+  useEffect(() => {
+    if (!token || me || oauthCallback?.code) return
+    let active = true
+    void apiClient.getMe({ token })
+      .then(result => {
+        if (active) setMe(result.data)
+      })
+      .catch(error => {
+        if (!active) return
+        setToken('')
+        setAuthError(errorText(error))
+      })
+    return () => { active = false }
+  }, [token, me, oauthCallback?.code])
 
   useEffect(() => {
     if (!oauthCallback?.code || !oauthExchange) return
@@ -210,20 +230,20 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
   // Data loading is intentionally initiated by these effects when authentication or filters change.
   // oxlint's set-state-in-effect rule cannot see that the state updates happen asynchronously.
   // oxlint-disable-next-line react(set-state-in-effect)
-  useEffect(() => { if (!auth) return; void loadConversations(); void loadBlocked() }, [auth, loadConversations, loadBlocked])
+  useEffect(() => { if (!auth || !me) return; void loadConversations(); void loadBlocked() }, [auth, me, loadConversations, loadBlocked])
   // oxlint-disable-next-line react(set-state-in-effect)
-  useEffect(() => { if (!auth) return; void loadPublic() }, [auth, loadPublic])
+  useEffect(() => { if (!auth || !me) return; void loadPublic() }, [auth, me, loadPublic])
   // oxlint-disable-next-line react(set-state-in-effect)
-  useEffect(() => { if (selectedId && auth) void loadDirect(selectedId, 1) }, [selectedId, auth, loadDirect])
+  useEffect(() => { if (selectedId && auth && me) void loadDirect(selectedId, 1) }, [selectedId, auth, me, loadDirect])
   useEffect(() => {
-    if (!auth) return
+    if (!auth || !me) return
     const timer = window.setInterval(() => {
       void loadConversations(true)
       if (section === 'public') void loadPublic(true)
       if (section === 'direct' && selectedId !== null) void loadDirect(selectedId, directPage, true)
     }, 15000)
     return () => window.clearInterval(timer)
-  }, [auth, loadConversations, loadPublic, loadDirect, section, selectedId, directPage])
+  }, [auth, me, loadConversations, loadPublic, loadDirect, section, selectedId, directPage])
 
   function stopDirectTyping() {
     if (typingTimer.current !== null) window.clearTimeout(typingTimer.current)
@@ -399,7 +419,7 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
     }
   }
 
-  useRealtime(auth?.token ?? null, selectedId, signal => {
+  useRealtime(me ? auth?.token ?? null : null, selectedId, signal => {
     if (signal.type === 'public-message') {
       if (section === 'public') void loadPublic(true)
       void loadConversations(true)

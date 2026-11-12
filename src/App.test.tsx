@@ -36,4 +36,23 @@ describe('App authentication screen', () => {
     expect(screen.getByRole('link', { name: /continue with google/i })).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Bearer access token' })).not.toBeInTheDocument();
   });
+
+  it('restores a valid token from localStorage after a page refresh', async () => {
+    const token = 'stored-sanctum-token';
+    const user = { id: 8, name: 'Stored User', email: 'stored@example.test', avatar_url: null };
+    localStorage.setItem('sawalf_access_token', token);
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async input => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/api/auth/me') return new Response(JSON.stringify({ data: user }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ data: [], last_page: 1, current_page: 1, total: 0, per_page: 10 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText('stored@example.test')).toBeInTheDocument();
+    const meRequest = fetchMock.mock.calls.find(([input]) => new URL(String(input)).pathname === '/api/auth/me');
+    expect(meRequest).toBeDefined();
+    expect(new Headers(meRequest?.[1]?.headers).get('Authorization')).toBe(`Bearer ${token}`);
+  });
 });
