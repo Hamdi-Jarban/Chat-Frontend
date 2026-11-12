@@ -554,6 +554,20 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
                 </select>
               </div>
 
+              <form className="composer-bar public-composer" onSubmit={send}>
+                <textarea
+                  value={composer}
+                  onChange={e => setComposer(e.target.value)}
+                  placeholder={t('اكتب منشورًا للمجتمع…', 'Write a community post…')}
+                  rows={2}
+                  aria-label={t('منشور جديد', 'New post')}
+                />
+                <button type="submit" className="send-btn" disabled={busy || !composer.trim()}>
+                  <Send size={16} />
+                  <span>{t('نشر', 'Publish')}</span>
+                </button>
+              </form>
+
               <div className="feed">
                 {publicMessages.length === 0 && (
                   <div className="empty-state">
