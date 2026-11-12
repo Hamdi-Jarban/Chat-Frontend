@@ -162,6 +162,11 @@ export const apiClient = {
     return import.meta.env.VITE_GOOGLE_AUTH_URL ?? buildUrl('/auth/google/redirect');
   },
 
+  /** Exchange the backend-issued, short-lived, single-use OAuth code for a Sanctum token. */
+  exchangeGoogleCode(code: string): Promise<AuthTokenResponse> {
+    return request('/auth/exchange', { method: 'POST', body: { code } });
+  },
+
   getMe(options: AuthenticatedOptions): Promise<DataResponse<User>> {
     return request('/auth/me', auth(options));
   },
