@@ -438,8 +438,9 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
           {oauthLoading && <div className="notice" role="status">{t('جارٍ إكمال تسجيل الدخول…', 'Completing sign-in…')}</div>}
           <div className="or"><span>{t('أو أدخل رمز وصول يدويًا', 'or enter an access token manually')}</span></div>
           <form onSubmit={authenticate} className="token-form">
-            <input dir="ltr" value={tokenInput} onChange={e => setTokenInput(e.target.value)} placeholder="Bearer access_token" aria-label="Bearer access token" disabled={oauthLoading} />
-            <button disabled={busy || oauthLoading}>{busy || oauthLoading ? '…' : t('تحقق', 'Verify')}</button>
+            <button type="button" className="google-link inline" onClick={() => window.location.href = apiClient.googleRedirectUrl()}>
+              {t('تسجيل الدخول عبر Google', 'Sign in with Google')}
+            </button>
           </form>
           {authError && <div className="alert" role="alert">{authError}</div>}
           <div className="pref-row">
