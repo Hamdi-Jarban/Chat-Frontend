@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ArrowDown, ArrowUp, Ban, Check, ChevronLeft, Hash, Languages, LogOut, MessageCircle, Moon, Plus, Send, Sun, Trash2, X } from 'lucide-react'
 import { apiClient, isApiError } from './services/apiClient'
 import { useRealtime } from './services/realtime'
-import type { Comment, DirectConversation, DirectMessage, PublicMessage, User, UserSummary } from './types/api'
+import type { AuthTokenResponse, Comment, DirectConversation, DirectMessage, PublicMessage, User, UserSummary } from './types/api'
+import type { OAuthCallbackResult } from './services/oauthCallback'
 import './App.css'
 
 type Section = 'public' | 'direct' | 'blocked'
@@ -10,6 +11,16 @@ type Theme = 'light' | 'dark'
 const readPref = <T extends string>(key: string, fallback: T): T => (localStorage.getItem(key) as T | null) ?? fallback
 const avatarName = (u?: UserSummary | null) => u?.name?.trim() || 'مستخدم'
 const time = (date: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date))
+const oauthFailureMessage = (code?: string) => {
+  switch (code) {
+    case 'cancelled': return 'تم إلغاء تسجيل الدخول عبر Google.'
+    case 'invalid_state': return 'تعذر التحقق من جلسة OAuth. ابدأ تسجيل الدخول مجددًا.'
+    case 'unverified_identity': return 'لم يتمكن Google من تأكيد هوية الحساب.'
+    case 'account_conflict': return 'يوجد حساب بهذا البريد مرتبط بطريقة دخول أخرى.'
+    case 'oauth_failed': return 'تعذر إكمال تسجيل الدخول عبر Google. حاول مرة أخرى.'
+    default: return 'لم يصل رمز تسجيل الدخول. ابدأ تسجيل الدخول عبر Google مجددًا.'
+  }
+}
 const errorText = (error: unknown) => {
   if (isApiError(error)) {
     if (error.status === 401) return 'انتهت صلاحية الجلسة أو أن الرمز غير صالح. سجّل الدخول مجددًا.'
@@ -21,11 +32,17 @@ const errorText = (error: unknown) => {
   return error instanceof Error ? error.message : 'تعذر الاتصال بالخادم. تحقق من اتصال الشبكة وإعداد API.'
 }
 
-function App() {
+type AppProps = {
+  oauthCallback?: OAuthCallbackResult | null
+  oauthExchange?: Promise<AuthTokenResponse> | null
+}
+
+function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
   const [token, setToken] = useState('')
   const [me, setMe] = useState<User | null>(null)
   const [tokenInput, setTokenInput] = useState('')
-  const [authError, setAuthError] = useState('')
+  const [authError, setAuthError] = useState(() => oauthCallback ? oauthFailureMessage(oauthCallback.error) : '')
+  const [oauthLoading, setOAuthLoading] = useState(() => Boolean(oauthCallback?.code && oauthExchange))
   const [section, setSection] = useState<Section>('public')
   const [mobileNav, setMobileNav] = useState(false)
   const [theme, setTheme] = useState<Theme>(() => readPref('chat-theme', 'light'))
@@ -63,6 +80,23 @@ function App() {
 
   useEffect(() => { localStorage.setItem('chat-theme', theme) }, [theme])
   useEffect(() => { localStorage.setItem('chat-language', english ? 'en' : 'ar') }, [english])
+  useEffect(() => {
+    if (!oauthCallback?.code || !oauthExchange) return
+    let active = true
+    void oauthExchange.then((result) => {
+      if (!active) return
+      setMe(result.user)
+      setToken(result.access_token)
+      setTokenInput('')
+    }).catch((e: unknown) => {
+      if (active) setAuthError(isApiError(e) && e.status === 401
+        ? 'انتهت صلاحية رمز تسجيل الدخول أو سبق استخدامه. ابدأ تسجيل الدخول عبر Google مجددًا.'
+        : errorText(e))
+    }).finally(() => {
+      if (active) setOAuthLoading(false)
+    })
+    return () => { active = false }
+  }, [oauthCallback, oauthExchange])
   const auth = useMemo(() => token ? { token } : null, [token])
   const visibleConversations = conversations.filter(c => !blocked.some(user => user.id === c.other_user.id))
   const selected = visibleConversations.find(c => c.id === selectedId) ?? null
@@ -144,7 +178,7 @@ function App() {
     }
   })
 
-  if (!auth || !me) return <main className="auth-screen" dir={english ? 'ltr' : 'rtl'} data-theme={theme}><section className="auth-card"><div className="brand-mark"><MessageCircle /></div><p className="kicker">SAWALF · CHAT</p><h1>{t('مساحة للمحادثات،', 'A space for')}<br/><em>{t('ببساطة ووضوح.', 'clear conversations.')}</em></h1><p className="subtle">{t('سجّل الدخول عبر Google ثم انسخ رمز الوصول من استجابة الخادم وألصقه أدناه. التحويل OAuth يعرض استجابة JSON ولا يمرّر الرمز تلقائيًا إلى التطبيق.', 'Sign in with Google, then copy the access token from the backend response and paste it below. The OAuth redirect returns JSON; it does not hand the token back to this app automatically.')}</p><a className="google-link" href={apiClient.googleRedirectUrl()}>{t('المتابعة عبر Google', 'Continue with Google')} <ChevronLeft size={17}/></a><div className="or"><span>{t('أو أدخل الرمز يدويًا', 'or enter a token manually')}</span></div><form onSubmit={authenticate} className="token-form"><input dir="ltr" value={tokenInput} onChange={e => setTokenInput(e.target.value)} placeholder="Bearer access_token" aria-label="Bearer access token"/><button disabled={busy}>{busy ? '…' : t('تحقق', 'Verify')}</button></form>{authError && <div className="alert">{authError}</div>}<div className="pref-row"><button onClick={() => setEnglish(!english)}><Languages size={16}/>{english ? 'العربية' : 'English'}</button><button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={16}/> : <Sun size={16}/>} {theme === 'light' ? t('داكن', 'Dark') : t('فاتح', 'Light')}</button></div></section></main>
+  if (!auth || !me) return <main className="auth-screen" dir={english ? 'ltr' : 'rtl'} data-theme={theme}><section className="auth-card"><div className="brand-mark"><MessageCircle /></div><p className="kicker">SAWALF · CHAT</p><h1>{t('مساحة للمحادثات،', 'A space for')}<br/><em>{t('ببساطة ووضوح.', 'clear conversations.')}</em></h1><p className="subtle">{t('سجّل الدخول عبر Google وستعود إلى التطبيق تلقائيًا. لا يظهر رمز الوصول في الرابط أو الشاشة؛ ويمكنك إدخال رمز يدويًا عند الحاجة.', 'Sign in with Google and you will return to the app automatically. Your access token is not shown in the URL or on screen; manual token entry remains available as a fallback.')}</p><a className="google-link" href={apiClient.googleRedirectUrl()}>{t('المتابعة عبر Google', 'Continue with Google')} <ChevronLeft size={17}/></a>{oauthLoading && <div className="notice" role="status">{t('جارٍ إكمال تسجيل الدخول…', 'Completing sign-in…')}</div>}<div className="or"><span>{t('أو أدخل رمز وصول يدويًا', 'or enter an access token manually')}</span></div><form onSubmit={authenticate} className="token-form"><input dir="ltr" value={tokenInput} onChange={e => setTokenInput(e.target.value)} placeholder="Bearer access_token" aria-label="Bearer access token" disabled={oauthLoading}/><button disabled={busy || oauthLoading}>{busy || oauthLoading ? '…' : t('تحقق', 'Verify')}</button></form>{authError && <div className="alert" role="alert">{authError}</div>}<div className="pref-row"><button onClick={() => setEnglish(!english)}><Languages size={16}/>{english ? 'العربية' : 'English'}</button><button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={16}/> : <Sun size={16}/>} {theme === 'light' ? t('داكن', 'Dark') : t('فاتح', 'Light')}</button></div></section></main>
 
   return <div className="app" dir={english ? 'ltr' : 'rtl'} data-theme={theme}>
     <header className="topbar"><button className="brand" onClick={() => setMobileNav(!mobileNav)}><span className="brand-mark small"><MessageCircle size={18}/></span><span>سوالف</span></button><div className="top-actions"><span className="account-name">{me.name || me.email}</span><button title={t('اللغة','Language')} onClick={() => setEnglish(!english)}><Languages size={18}/></button><button title={t('المظهر','Theme')} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={18}/> : <Sun size={18}/>}</button><button title={t('تسجيل الخروج','Log out')} onClick={() => void logout()}><LogOut size={18}/></button></div></header>

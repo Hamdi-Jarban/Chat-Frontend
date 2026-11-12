@@ -12,6 +12,25 @@ afterEach(() => {
 });
 
 describe('apiClient', () => {
+  it('exchanges a temporary Google code without sending a bearer token', async () => {
+    const responseBody = {
+      token_type: 'Bearer',
+      access_token: 'sanctum-token',
+      user: { id: 1, name: 'Test User', email: 'test@example.test', avatar_url: null },
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, responseBody));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await apiClient.exchangeGoogleCode('temporary-one-time-code');
+
+    const [input, init] = fetchMock.mock.calls[0]!;
+    expect(new URL(String(input)).pathname).toBe('/api/auth/exchange');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe(JSON.stringify({ code: 'temporary-one-time-code' }));
+    expect(new Headers(init?.headers).has('Authorization')).toBe(false);
+    expect(result).toEqual(responseBody);
+  });
+
   it('sends bearer Authorization and JSON Accept headers on authenticated requests', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, { data: { id: 1 } }));
     vi.stubGlobal('fetch', fetchMock);

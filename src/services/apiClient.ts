@@ -159,6 +159,11 @@ export const apiClient = {
     return import.meta.env.VITE_GOOGLE_AUTH_URL ?? buildUrl('/auth/google/redirect');
   },
 
+  /** Exchange a short-lived, single-use Google OAuth code for a Sanctum bearer token. */
+  exchangeGoogleCode(code: string): Promise<AuthTokenResponse> {
+    return request('/auth/exchange', { method: 'POST', body: { code } });
+  },
+
   getMe(options: AuthenticatedOptions): Promise<DataResponse<User>> {
     return request('/auth/me', auth(options));
   },
