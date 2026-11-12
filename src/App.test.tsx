@@ -55,4 +55,16 @@ describe('App authentication screen', () => {
     expect(meRequest).toBeDefined();
     expect(new Headers(meRequest?.[1]?.headers).get('Authorization')).toBe(`Bearer ${token}`);
   });
+
+  it('keeps the stored token when the session check fails because the API is unavailable', async () => {
+    const token = 'stored-sanctum-token';
+    localStorage.setItem('sawalf_access_token', token);
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    render(<App />);
+
+    expect(await screen.findByText(/تعذر الاتصال بالخادم|check your network connection/i)).toBeInTheDocument();
+    expect(localStorage.getItem('sawalf_access_token')).toBe(token);
+    expect(screen.queryByRole('link', { name: /continue with google/i })).not.toBeInTheDocument();
+  });
 });

@@ -33,6 +33,9 @@ const errorText = (error: unknown) => {
     if (error.status === 429) return 'طلبات كثيرة جدًا. انتظر قليلًا ثم حاول مجددًا.'
     return error.message
   }
+  if (error instanceof TypeError && /fetch|network/i.test(error.message)) {
+    return 'تعذر الاتصال بالخادم. تحقق من اتصال الشبكة وإعداد API.'
+  }
   return error instanceof Error ? error.message : 'تعذر الاتصال بالخادم. تحقق من اتصال الشبكة وإعداد API.'
 }
 
@@ -101,7 +104,9 @@ function App({ oauthCallback = null, oauthExchange = null }: AppProps = {}) {
       })
       .catch(error => {
         if (!active) return
-        setToken('')
+        // Keep a valid stored token across transient API/CORS/server failures.
+        // Only an explicit 401 proves that the session can no longer be used.
+        if (isApiError(error) && error.isUnauthorized) setToken('')
         setAuthError(errorText(error))
       })
     return () => { active = false }
