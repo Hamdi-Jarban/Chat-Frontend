@@ -13,6 +13,7 @@ export type RealtimeSignal =
 
 interface RealtimeOptions {
   token: string
+  userId: number
   conversationId: number | null
   onSignal: (signal: RealtimeSignal) => void
 }
@@ -28,7 +29,7 @@ function broadcastingAuthUrl(): string {
 }
 
 /** Opens only server-authorized private channels; Laravel adds the `private-` wire prefix. */
-export function subscribeRealtime({ token, conversationId, onSignal }: RealtimeOptions): (() => void) | null {
+export function subscribeRealtime({ token, userId, conversationId, onSignal }: RealtimeOptions): (() => void) | null {
   const key = import.meta.env.VITE_REVERB_APP_KEY
   const host = import.meta.env.VITE_REVERB_HOST
   const scheme = import.meta.env.VITE_REVERB_SCHEME ?? 'https'
@@ -48,12 +49,14 @@ export function subscribeRealtime({ token, conversationId, onSignal }: RealtimeO
     auth: { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
   })
 
-  const publicChat = echo.private(REVERB_CHANNELS.chat)
-  publicChat
+  echo.private(REVERB_CHANNELS.chat)
     .listen(`.${REVERB_EVENTS.messageCreated}`, (payload: MessageIdEvent) => onSignal({ type: 'public-message', payload }))
     .listen(`.${REVERB_EVENTS.messageUpdated}`, (payload: MessageIdEvent) => onSignal({ type: 'public-message', payload }))
     .listen(`.${REVERB_EVENTS.messageDeleted}`, (payload: MessageIdEvent) => onSignal({ type: 'public-message', payload }))
     .listen(`.${REVERB_EVENTS.messageCommentsUpdated}`, (payload: MessageIdEvent) => onSignal({ type: 'public-comments', payload }))
+
+  // Typing uses a per-recipient channel so users excluded by block rules never receive it.
+  echo.private(REVERB_CHANNELS.chatUser(userId))
     .listen(`.${REVERB_EVENTS.userTyping}`, (payload: TypingEvent) => onSignal({ type: 'public-typing', payload }))
 
   if (conversationId !== null) {
@@ -68,6 +71,7 @@ export function subscribeRealtime({ token, conversationId, onSignal }: RealtimeO
 
 export function useRealtime(
   token: string | null,
+  userId: number | null,
   conversationId: number | null,
   onSignal: (signal: RealtimeSignal) => void,
 ): void {
@@ -78,7 +82,7 @@ export function useRealtime(
   }, [onSignal])
 
   useEffect(() => {
-    if (!token) return
-    return subscribeRealtime({ token, conversationId, onSignal: (signal) => callbackRef.current(signal) }) ?? undefined
-  }, [token, conversationId])
+    if (!token || userId === null) return
+    return subscribeRealtime({ token, userId, conversationId, onSignal: (signal) => callbackRef.current(signal) }) ?? undefined
+  }, [token, userId, conversationId])
 }

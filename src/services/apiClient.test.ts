@@ -7,22 +7,17 @@ const jsonResponse = (status: number, body: unknown) => new Response(JSON.string
   headers: { 'Content-Type': 'application/json' },
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('apiClient', () => {
   it('exchanges a temporary Google code without sending a bearer token', async () => {
     const responseBody = {
-      token_type: 'Bearer',
-      access_token: 'sanctum-token',
+      token_type: 'Bearer', access_token: 'sanctum-token',
       user: { id: 1, name: 'Test User', email: 'test@example.test', avatar_url: null },
     };
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, responseBody));
     vi.stubGlobal('fetch', fetchMock);
-
     const result = await apiClient.exchangeGoogleCode('temporary-one-time-code');
-
     const [input, init] = fetchMock.mock.calls[0]!;
     expect(new URL(String(input)).pathname).toBe('/api/auth/exchange');
     expect(init?.method).toBe('POST');
@@ -34,27 +29,38 @@ describe('apiClient', () => {
   it('sends bearer Authorization and JSON Accept headers on authenticated requests', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, { data: { id: 1 } }));
     vi.stubGlobal('fetch', fetchMock);
-
     await apiClient.getMe({ token });
-
     const [, init] = fetchMock.mock.calls[0]!;
     const headers = new Headers(init?.headers);
     expect(headers.get('Authorization')).toBe(`Bearer ${token}`);
     expect(headers.get('Accept')).toBe('application/json');
   });
 
-  it('creates a public message with POST /messages and the documented content body', async () => {
+  it('creates a public message using the documented endpoint and payload', async () => {
     const responseBody = { data: { id: 7, content: 'Hello community' } };
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(201, responseBody));
     vi.stubGlobal('fetch', fetchMock);
-
     const result = await apiClient.createMessage({ content: 'Hello community' }, { token });
-
     const [input, init] = fetchMock.mock.calls[0]!;
     expect(new URL(String(input)).pathname).toBe('/api/messages');
     expect(init?.method).toBe('POST');
     expect(init?.body).toBe(JSON.stringify({ content: 'Hello community' }));
     expect(result).toEqual(responseBody);
+  });
+
+  it('supports both legacy and paginator list responses without losing pagination metadata', async () => {
+    const paginator = { data: [{ id: 1 }], current_page: 1, last_page: 3, per_page: 20, total: 45 };
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, paginator)));
+    const response = await apiClient.listDirectConversations({ token });
+    expect(response.data).toEqual([{ id: 1 }]);
+    expect(response.last_page).toBe(3);
+  });
+
+  it('adds a page parameter when requesting comment pages', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, { data: [], current_page: 2, last_page: 4, per_page: 20, total: 70 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await apiClient.listComments(9, { token }, { page: 2 });
+    expect(new URL(String(fetchMock.mock.calls[0]![0])).searchParams.get('page')).toBe('2');
   });
 
   it.each([
@@ -63,14 +69,8 @@ describe('apiClient', () => {
     { status: 429, body: { message: 'Too many requests.' }, flag: 'isRateLimited' as const },
   ])('preserves structured $status API errors', async ({ status, body, flag }) => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(status, body)));
-
     let caught: unknown;
-    try {
-      await apiClient.getMe({ token });
-    } catch (error) {
-      caught = error;
-    }
-
+    try { await apiClient.getMe({ token }); } catch (error) { caught = error; }
     expect(caught).toBeInstanceOf(ApiError);
     const error = caught as ApiError;
     expect(error.status).toBe(status);
