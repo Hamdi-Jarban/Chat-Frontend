@@ -102,7 +102,7 @@ function extractMessage(payload: unknown, status: number, statusText: string): s
 function buildUrl(path: string, query?: ApiRequestConfig['query']): string {
   const url = new URL(`${API_BASE_URL}${path}`, window.location.origin);
   for (const [key, value] of Object.entries(query ?? {})) {
-    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }
   return url.toString();
 }
@@ -150,18 +150,16 @@ function auth(options: AuthenticatedOptions): ApiRequestOptions {
 }
 
 function query(options?: PageQuery | MessageFilters): Record<string, string | number | boolean | null | undefined> | undefined {
-  return options as Record<string, string | number | boolean | null | undefined> | undefined;
+  if (!options) return undefined;
+  const entries = Object.entries(options).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  if (entries.length === 0) return undefined;
+  return Object.fromEntries(entries) as Record<string, string | number | boolean | null | undefined>;
 }
 
 export const apiClient = {
   /** URL to navigate to for the backend's GET /auth/google/redirect (302 to Google). */
   googleRedirectUrl(): string {
     return import.meta.env.VITE_GOOGLE_AUTH_URL ?? buildUrl('/auth/google/redirect');
-  },
-
-  /** Exchange a short-lived, single-use Google OAuth code for a Sanctum bearer token. */
-  exchangeGoogleCode(code: string): Promise<AuthTokenResponse> {
-    return request('/auth/exchange', { method: 'POST', body: { code } });
   },
 
   getMe(options: AuthenticatedOptions): Promise<DataResponse<User>> {
